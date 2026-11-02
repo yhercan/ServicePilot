@@ -1,0 +1,488 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MembershipRole {
+  ADMIN
+  OPERATIONS_MANAGER
+  TEAM_LEADER
+  SERVICE_ENGINEER
+}
+
+enum ServiceType {
+  MAINTENANCE
+  BREAKDOWN
+  INSTALLATION
+}
+
+enum ServiceStatus {
+  PLANNED
+  ASSIGNED
+  IN_PROGRESS
+  WAITING
+  COMPLETED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum DocumentType {
+  SERVICE_REPORT
+  OTHER
+}
+
+enum AnnouncementStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum AnnouncementAudience {
+  ALL
+  TEAMS
+}
+
+enum NotificationType {
+  NEXT_VISIT_SCHEDULED
+  NEXT_VISIT_REMINDER
+  VISIT_ASSIGNED
+}
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships   Membership[]
+  customers     Customer[]
+  equipment     Equipment[]
+  visits        ServiceVisit[]
+  attachments   Attachment[]
+  auditLogs     AuditLog[]
+  teams         Team[]
+  announcements Announcement[]
+  calendarEntries CalendarEntry[]
+  customerContacts CustomerContact[]
+  notifications   Notification[]
+  userSettings    UserSettings[]
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  email        String   @unique
+  passwordHash String
+  avatarPath   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships          Membership[]
+  assignments          ServiceAssignment[]
+  comments             ServiceComment[]
+  createdVisits        ServiceVisit[]           @relation("VisitCreatedBy")
+  statusChanges        ServiceStatusHistory[]   @relation("StatusChangedBy")
+  uploads              Attachment[]
+  auditLogs            AuditLog[]
+  ledTeams             Team[]                   @relation("TeamLeader")
+  teamMemberships      TeamMembership[]
+  managedCustomers     Customer[]               @relation("CustomerOperationsManager")
+  createdAnnouncements Announcement[]           @relation("AnnouncementCreatedBy")
+  createdCalendarEntries CalendarEntry[]        @relation("CalendarEntryCreatedBy")
+  calendarAssignments  CalendarEntryAssignment[]
+  notifications        Notification[]
+  settings             UserSettings[]
+}
+
+model Membership {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @db.Uuid
+  userId         String         @db.Uuid
+  role           MembershipRole
+  createdAt      DateTime       @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId, role])
+}
+
+model Team {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  description    String?
+  isActive       Boolean  @default(true)
+  leaderId       String?  @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  leader          User?            @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+  memberships     TeamMembership[]
+  calendarEntries CalendarEntry[]
+  announcementTargets AnnouncementTeam[]
+  visits          ServiceVisit[]
+  equipmentLinks  EquipmentTeam[]
+
+  @@index([organizationId])
+  @@index([organizationId, isActive])
+  @@index([leaderId])
+  @@unique([organizationId, name])
+}
+
+model TeamMembership {
+  id         String   @id @default(uuid()) @db.Uuid
+  teamId     String   @db.Uuid
+  userId     String   @db.Uuid
+  createdAt  DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+model Customer {
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizationId       String   @db.Uuid
+  companyName          String
+  contactPerson        String
+  email                String?
+  phone                String?
+  address              String?
+  city                 String?
+  notes                String?
+  operationsManagerId  String?  @db.Uuid
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  operationsManager User?             @relation("CustomerOperationsManager", fields: [operationsManagerId], references: [id], onDelete: SetNull)
+  equipment         Equipment[]
+  visits            ServiceVisit[]
+  contacts          CustomerContact[]
+  calendarEntries   CalendarEntry[]
+
+  @@index([organizationId])
+  @@index([organizationId, companyName])
+  @@index([organizationId, city])
+  @@index([operationsManagerId])
+}
+
+model CustomerContact {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  customerId     String   @db.Uuid
+  fullName       String
+  jobTitle       String?
+  phone          String?
+  email          String?
+  notes          String?
+  isPrimary      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([customerId, isPrimary])
+}
+
+model Equipment {
+  id               String    @id @default(uuid()) @db.Uuid
+  organizationId   String    @db.Uuid
+  customerId       String    @db.Uuid
+  name             String
+  brand            String?
+  model            String?
+  serialNumber     String?
+  installationDate DateTime? @db.Date
+  warrantyEndDate  DateTime? @db.Date
+  contractEndDate  DateTime? @db.Date
+  location         String?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  visits          ServiceVisit[]
+  calendarEntries CalendarEntry[]
+  teamLinks       EquipmentTeam[]
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([organizationId, serialNumber])
+  @@index([organizationId, warrantyEndDate])
+  @@index([organizationId, contractEndDate])
+}
+
+model EquipmentTeam {
+  id          String   @id @default(uuid()) @db.Uuid
+  equipmentId String   @db.Uuid
+  teamId      String   @db.Uuid
+  createdAt   DateTime @default(now())
+
+  equipment Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  team      Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([equipmentId, teamId])
+  @@index([teamId])
+}
+
+model ServiceVisit {
+  id                 String        @id @default(uuid()) @db.Uuid
+  organizationId     String        @db.Uuid
+  customerId         String        @db.Uuid
+  equipmentId        String        @db.Uuid
+  teamId             String?       @db.Uuid
+  title              String
+  description        String?
+  serviceType        ServiceType
+  status             ServiceStatus @default(PLANNED)
+  priority           Priority      @default(NORMAL)
+  plannedDate        DateTime
+  actualStartDate    DateTime?
+  actualEndDate      DateTime?
+  createdById        String        @db.Uuid
+  sapReferenceNumber String?
+  nextVisitEnabled   Boolean      @default(false)
+  nextVisitDate      DateTime?
+  nextVisitType      ServiceType?
+  nextVisitNotifiedAt DateTime?
+  nextVisitReminderSentAt DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  equipment    Equipment    @relation(fields: [equipmentId], references: [id], onDelete: Restrict)
+  team         Team?        @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  createdBy    User         @relation("VisitCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  assignments     ServiceAssignment[]
+  comments        ServiceComment[]
+  statusHistory   ServiceStatusHistory[]
+  attachments     Attachment[]
+  calendarEntries CalendarEntry[]
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, plannedDate])
+  @@index([organizationId, nextVisitEnabled, nextVisitDate])
+  @@index([customerId])
+  @@index([equipmentId])
+  @@index([createdById])
+  @@index([teamId])
+}
+
+model Notification {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @db.Uuid
+  userId         String           @db.Uuid
+  type           NotificationType
+  title          String
+  body           String
+  href           String?
+  readAt         DateTime?
+  createdAt      DateTime         @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+model UserSettings {
+  id                        String   @id @default(uuid()) @db.Uuid
+  organizationId            String   @db.Uuid
+  userId                    String   @db.Uuid
+  notifyNextVisitScheduled  Boolean  @default(true)
+  notifyNextVisitReminder   Boolean  @default(true)
+  notifyVisitAssigned       Boolean  @default(true)
+  showUpcomingOnDashboard   Boolean  @default(true)
+  showFollowUpsOnDashboard  Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model ServiceAssignment {
+  id             String   @id @default(uuid()) @db.Uuid
+  serviceVisitId String   @db.Uuid
+  userId         String   @db.Uuid
+  assignedAt     DateTime @default(now())
+
+  serviceVisit ServiceVisit @relation(fields: [serviceVisitId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([serviceVisitId, userId])
+  @@index([userId])
+}
+
+model ServiceComment {
+  id             String   @id @default(uuid()) @db.Uuid
+  serviceVisitId String   @db.Uuid
+  userId         String   @db.Uuid
+  content        String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  serviceVisit ServiceVisit @relation(fields: [serviceVisitId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([serviceVisitId])
+  @@index([userId])
+}
+
+model ServiceStatusHistory {
+  id             String         @id @default(uuid()) @db.Uuid
+  serviceVisitId String         @db.Uuid
+  changedById    String         @db.Uuid
+  previousStatus ServiceStatus?
+  newStatus      ServiceStatus
+  note           String?
+  createdAt      DateTime       @default(now())
+
+  serviceVisit ServiceVisit @relation(fields: [serviceVisitId], references: [id], onDelete: Cascade)
+  changedBy    User         @relation("StatusChangedBy", fields: [changedById], references: [id], onDelete: Restrict)
+
+  @@index([serviceVisitId, createdAt])
+}
+
+model Attachment {
+  id               String       @id @default(uuid()) @db.Uuid
+  organizationId   String       @db.Uuid
+  serviceVisitId   String       @db.Uuid
+  uploadedById     String       @db.Uuid
+  originalFileName String
+  storagePath      String
+  mimeType         String
+  fileSize         Int
+  documentType     DocumentType @default(SERVICE_REPORT)
+  createdAt        DateTime     @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  serviceVisit ServiceVisit @relation(fields: [serviceVisitId], references: [id], onDelete: Cascade)
+  uploadedBy   User         @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([serviceVisitId])
+}
+
+model Announcement {
+  id             String               @id @default(uuid()) @db.Uuid
+  organizationId String               @db.Uuid
+  title          String
+  content        String
+  status         AnnouncementStatus   @default(DRAFT)
+  audience       AnnouncementAudience @default(ALL)
+  publishedAt    DateTime?
+  expiresAt      DateTime?
+  createdById    String               @db.Uuid
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User              @relation("AnnouncementCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  teams        AnnouncementTeam[]
+
+  @@index([organizationId])
+  @@index([organizationId, status, publishedAt])
+  @@index([createdById])
+}
+
+model AnnouncementTeam {
+  id             String @id @default(uuid()) @db.Uuid
+  announcementId String @db.Uuid
+  teamId         String @db.Uuid
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, teamId])
+  @@index([teamId])
+}
+
+model CalendarEntry {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @db.Uuid
+  teamId         String         @db.Uuid
+  title          String
+  description    String?
+  entryDate      DateTime       @db.Date
+  customerId     String?        @db.Uuid
+  equipmentId    String?        @db.Uuid
+  serviceVisitId String?        @db.Uuid
+  serviceType    ServiceType?
+  priority       Priority       @default(NORMAL)
+  status         ServiceStatus  @default(PLANNED)
+  createdById    String         @db.Uuid
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  team         Team                      @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  customer     Customer?                 @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  equipment    Equipment?                @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  serviceVisit ServiceVisit?             @relation(fields: [serviceVisitId], references: [id], onDelete: SetNull)
+  createdBy    User                      @relation("CalendarEntryCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  assignments  CalendarEntryAssignment[]
+
+  @@index([organizationId])
+  @@index([teamId, entryDate])
+  @@index([organizationId, entryDate])
+  @@index([serviceVisitId])
+  @@index([customerId])
+  @@index([createdById])
+}
+
+model CalendarEntryAssignment {
+  id              String   @id @default(uuid()) @db.Uuid
+  calendarEntryId String   @db.Uuid
+  userId          String   @db.Uuid
+  assignedAt      DateTime @default(now())
+
+  calendarEntry CalendarEntry @relation(fields: [calendarEntryId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([calendarEntryId, userId])
+  @@index([userId])
+}
+
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  userId         String?  @db.Uuid
+  action         String
+  entityType     String
+  entityId       String   @db.Uuid
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
+  @@index([userId])
+}

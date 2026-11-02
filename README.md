@@ -1,36 +1,94 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ServisPilot
 
-## Getting Started
+Teknik servis ve ekipman bakım yönetimi. Uygulama bağımsız çalışır; SAP entegrasyonu bu sürümde yoktur. `ServiceVisit.sapReferenceNumber` alanı ileride kullanılmak üzere boş bırakılabilir.
 
-First, run the development server:
+## Gereksinimler
+
+- Node.js 22+
+- PostgreSQL 14+
+
+## Kurulum
+
+```bash
+npm install
+cp .env.example .env
+```
+
+`.env` içinde şunları doldurun:
+
+- `DATABASE_URL` — `servispilot` veritabanına bağlanan uygulama rolü
+- `SESSION_PASSWORD` — en az 32 karakterlik rastgele bir değer
+- `STORAGE_DIR` — yüklenen PDF’lerin tutulacağı dizin. Varsayılan `storage/uploads`, `public` klasörünün dışında olmalıdır.
+
+Örnek yerel rol:
+
+```sql
+CREATE ROLE servispilot_app LOGIN PASSWORD 'change-me';
+CREATE DATABASE servispilot OWNER servispilot_app;
+```
+
+`prisma migrate dev` gölge veritabanı oluşturduğu için yerel geliştirme rolünün `CREATEDB` yetkisi olmalıdır. Canlıda şema `prisma migrate deploy` ile uygulanır; bu komut gölge veritabanı istemez.
+
+```bash
+npx prisma migrate dev
+npm run db:seed
+npm run dev
+```
+
+Uygulama `http://localhost:3000` adresinde açılır.
+
+## Yerel deneme hesapları
+
+`npm run db:seed` demo organizasyon yoksa örnek kayıtları ekler. Tekrar çalıştırıldığında mevcut demo organizasyonu bulursa kayıtları silmez.
+
+Tüm hesapların şifresi: `ServisPilot123!`
+
+| Rol | E-posta | Organizasyon |
+| --- | --- | --- |
+| Yönetici | admin@servispilot.local | Kuzey Teknik Servis |
+| Operasyon sorumlusu | yonetici@servispilot.local | Kuzey Teknik Servis |
+| Servis mühendisi | teknisyen@servispilot.local | Kuzey Teknik Servis |
+| Servis mühendisi | teknisyen2@servispilot.local | Kuzey Teknik Servis |
+| Yönetici | diger@servispilot.local | Güney Bakım Hizmetleri |
+
+Uygulama rolleri: `ADMIN`, `OPERATIONS_MANAGER`, `TEAM_LEADER`, `SERVICE_ENGINEER`. Ekip üyeliği uygulama rolünden ayrıdır.
+
+İkinci organizasyon, kayıtların şirket bazında ayrı kaldığını denemek içindir.
+
+## Komutlar
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run build
+npm run lint
+npx prisma migrate dev
+npm run db:seed
+npm run db:studio
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Klasör yapısı
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```text
+prisma/                 Şema ve migration
+src/app/                Sayfalar ve dosya indirme rotası
+src/components/         Arayüz bileşenleri
+src/lib/                Oturum, yetki, Prisma ve ortak yardımcılar
+src/modules/            Müşteri, ekipman, servis ve pano iş kuralları
+src/server/storage/     Dosya depolama soyutlaması
+storage/uploads/        Yerel PDF depolama (public dışında)
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Veritabanı erişimi sunucuda kalır. Tarayıcıya bağlantı bilgisi veya parola özeti gönderilmez.
 
-## Learn More
+## Roller
 
-To learn more about Next.js, take a look at the following resources:
+- Yönetici: tam erişim; ekip ve duyuru yönetimi
+- Operasyon sorumlusu: sorumlu olduğu müşteriler ve ilgili operasyonlar
+- Ekip lideri: kendi ekibinin takvimini ve üyelerini görür/yönetir
+- Servis mühendisi: atandığı ziyaretleri görür, izinli alanları günceller, yorum ve PDF ekler
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Yetki kontrolleri sunucu eylemlerinde ve dosya rotasında tekrarlanır. Menüyü gizlemek tek başına yetki sayılmaz.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Dosyalar
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+PDF servis formları PostgreSQL’de saklanmaz. Yalnızca dosya yolu ve üst verisi kaydedilir. İndirme `GET /api/dosyalar/:id` üzerinden, oturum ve organizasyon kontrolünden sonra yapılır. Depolama arayüzü (`FileStorage`) daha sonra S3 uyumlu bir sağlayıcıya bırakılabilir.

@@ -1,9 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   cacheComponents: true,
-  partialPrefetching: true,
+  // partialPrefetching + layout Link prefetch was causing /panel↔/takvim HMR reload loops in dev
+  partialPrefetching: false,
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "12mb",
+    },
+  },
   turbopack: {
     rules: {
       "*.css": {
